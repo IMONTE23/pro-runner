@@ -2,8 +2,8 @@
 // DATA MANAGEMENT
 // ============================================
 
-// Your Running History Data
 let runHistory = [];
+let editingIndex = -1; // Track which run is being edited
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -23,8 +23,27 @@ function formatPace(seconds, distance) {
     return `${min}:${String(sec).padStart(2, '0')}`;
 }
 
-function saveData() {
-    localStorage.setItem('runHistory', JSON.stringify(runHistory));
+async function fetchRuns() {
+    try {
+        const response = await fetch('/api/runs');
+        if (response.ok) {
+            runHistory = await response.json();
+            updateUI();
+        } else {
+            console.error('Failed to fetch runs');
+        }
+    } catch (error) {
+        console.error('Error fetching runs:', error);
+    }
+}
+
+function updateUI() {
+    if (document.getElementById('dashboard-section').classList.contains('active')) {
+        initDashboard();
+    }
+    if (document.getElementById('history-section').classList.contains('active')) {
+        renderHistoryTable();
+    }
 }
 
 // ============================================
@@ -76,8 +95,9 @@ function updateDashboardStats() {
     const weeklyRuns = runHistory.filter(r => new Date(r.date) >= weekAgo);
     const weeklyVolume = weeklyRuns.reduce((sum, r) => sum + r.distance, 0);
 
-    const avgPaceSeconds = runHistory.reduce((sum, r) => sum + (r.time / r.distance), 0) / runHistory.length;
-    const avgHR = Math.round(runHistory.filter(r => r.hr).reduce((sum, r) => sum + r.hr, 0) / runHistory.filter(r => r.hr).length);
+    const avgPaceSeconds = runHistory.length > 0 ? runHistory.reduce((sum, r) => sum + (r.time / r.distance), 0) / runHistory.length : 0;
+    const runsWithHr = runHistory.filter(r => r.hr);
+    const avgHR = runsWithHr.length > 0 ? Math.round(runsWithHr.reduce((sum, r) => sum + r.hr, 0) / runsWithHr.length) : 0;
 
     document.getElementById('total-runs').textContent = totalRuns;
     document.getElementById('weekly-volume').textContent = `${weeklyVolume.toFixed(1)} km`;
@@ -105,9 +125,16 @@ function renderRecentRuns() {
     `).join('');
 }
 
+let weeklyChartInstance = null;
+let paceChartInstance = null;
+
 function createWeeklyChart() {
     const canvas = document.getElementById('weekly-chart');
     const ctx = canvas.getContext('2d');
+
+    if (weeklyChartInstance) {
+        weeklyChartInstance.destroy();
+    }
 
     // Aggregate by week
     const weeklyData = {};
@@ -121,7 +148,7 @@ function createWeeklyChart() {
     const weeks = Object.keys(weeklyData).sort().slice(-8);
     const distances = weeks.map(w => weeklyData[w]);
 
-    new Chart(ctx, {
+    weeklyChartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: weeks.map(w => new Date(w).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
@@ -159,10 +186,14 @@ function createPaceChart() {
     const canvas = document.getElementById('pace-chart');
     const ctx = canvas.getContext('2d');
 
+    if (paceChartInstance) {
+        paceChartInstance.destroy();
+    }
+
     const recentRuns = runHistory.slice(0, 10).reverse();
     const paces = recentRuns.map(r => (r.time / r.distance / 60).toFixed(2));
 
-    new Chart(ctx, {
+    paceChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: recentRuns.map(r => new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
@@ -297,38 +328,44 @@ function renderPaceZones(vdot) {
 // ============================================
 
 document.getElementById('toggle-form-btn').addEventListener('click', () => {
+    resetForm();
     document.getElementById('run-form').classList.toggle('hidden');
 });
 
 document.getElementById('cancel-form-btn').addEventListener('click', () => {
     document.getElementById('run-form').classList.add('hidden');
+    resetForm();
 });
 
-document.getElementById('clear-all-btn').addEventListener('click', clearAllData);
+function resetForm() {
+    editingIndex = -1;
+    document.getElementById('save-run-btn').textContent = 'Save Run';
+    document.querySelector('#run-form h3').textContent = 'Add New Run';
 
-function clearAllData() {
+    document.getElementById('run-date').valueAsDate = new Date();
+    document.getElementById('run-distance').value = '';
+    document.getElementById('run-time-h').value = '';
+    document.getElementById('run-time-m').value = '';
+    document.getElementById('run-time-s').value = '';
+    document.getElementById('run-hr').value = '';
+    document.getElementById('run-cadence').value = '';
+    document.getElementById('run-elevation').value = '';
+    document.getElementById('run-notes').value = '';
+}
+
+document.getElementById('clear-all-btn').addEventListener('click', async () => {
     const confirmMessage = `⚠️ WARNING: This will permanently delete ALL ${runHistory.length} runs from your history!\n\nThis action cannot be undone. Are you absolutely sure?`;
 
     if (confirm(confirmMessage)) {
-        const doubleConfirm = confirm('Last chance! Click OK to permanently delete all data, or Cancel to keep it.');
-
-        if (doubleConfirm) {
-            runHistory = [];
-            saveData();
-            renderHistoryTable();
-
-            if (document.getElementById('dashboard-section').classList.contains('active')) {
-                initDashboard();
-            }
-
-            alert('✅ All run history has been cleared.');
-        }
+        // Since we don't have a bulk delete API, we'll just warn the user for now
+        // or implement a loop to delete all (not efficient but works for MVP)
+        alert('Bulk delete not implemented in this version to prevent accidental data loss.');
     }
-}
+});
 
-document.getElementById('save-run-btn').addEventListener('click', saveNewRun);
+document.getElementById('save-run-btn').addEventListener('click', saveRun);
 
-function saveNewRun() {
+async function saveRun() {
     const date = document.getElementById('run-date').value;
     const distance = parseFloat(document.getElementById('run-distance').value);
     const hours = parseInt(document.getElementById('run-time-h').value) || 0;
@@ -350,31 +387,100 @@ function saveNewRun() {
         return;
     }
 
-    const newRun = { date, distance, time, hr, cadence, elevation, notes };
-    runHistory.unshift(newRun);
-    saveData();
+    const runData = { date, distance, time, hr, cadence, elevation, notes };
 
-    document.getElementById('run-form').classList.add('hidden');
-    document.getElementById('run-date').value = '';
-    document.getElementById('run-distance').value = '';
-    document.getElementById('run-time-h').value = '';
-    document.getElementById('run-time-m').value = '';
-    document.getElementById('run-time-s').value = '';
-    document.getElementById('run-hr').value = '';
-    document.getElementById('run-cadence').value = '';
-    document.getElementById('run-elevation').value = '';
-    document.getElementById('run-notes').value = '';
+    try {
+        let response;
+        if (editingIndex >= 0) {
+            // Update existing run
+            response = await fetch(`/api/runs/${editingIndex}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(runData)
+            });
+        } else {
+            // Create new run
+            response = await fetch('/api/runs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(runData)
+            });
+        }
 
-    renderHistoryTable();
+        if (response.ok) {
+            await fetchRuns(); // Refresh data
+            document.getElementById('run-form').classList.add('hidden');
+            resetForm();
+        } else {
+            alert('Failed to save run');
+        }
+    } catch (error) {
+        console.error('Error saving run:', error);
+        alert('Error saving run');
+    }
 }
+
+window.editRun = function (index) {
+    const run = runHistory[index];
+    if (!run) return;
+
+    editingIndex = index;
+
+    // Populate form
+    document.getElementById('run-date').value = run.date;
+    document.getElementById('run-distance').value = run.distance;
+
+    const h = Math.floor(run.time / 3600);
+    const m = Math.floor((run.time % 3600) / 60);
+    const s = run.time % 60;
+
+    document.getElementById('run-time-h').value = h || '';
+    document.getElementById('run-time-m').value = m || '';
+    document.getElementById('run-time-s').value = s || '';
+
+    document.getElementById('run-hr').value = run.hr || '';
+    document.getElementById('run-cadence').value = run.cadence || '';
+    document.getElementById('run-elevation').value = run.elevation || '';
+    document.getElementById('run-notes').value = run.notes || '';
+
+    // Update UI state
+    document.getElementById('save-run-btn').textContent = 'Update Run';
+    document.querySelector('#run-form h3').textContent = 'Edit Run';
+    document.getElementById('run-form').classList.remove('hidden');
+
+    // Scroll to form
+    document.getElementById('run-form').scrollIntoView({ behavior: 'smooth' });
+};
+
+window.deleteRun = async function (index) {
+    if (confirm('Are you sure you want to delete this run?')) {
+        try {
+            const response = await fetch(`/api/runs/${index}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                await fetchRuns();
+            } else {
+                alert('Failed to delete run');
+            }
+        } catch (error) {
+            console.error('Error deleting run:', error);
+            alert('Error deleting run');
+        }
+    }
+};
 
 function renderHistoryTable() {
     const tbody = document.getElementById('history-table-body');
     const searchTerm = document.getElementById('search-input').value.toLowerCase();
     const sortBy = document.getElementById('sort-select').value;
 
-    let filteredData = runHistory.filter(run =>
-        run.notes.toLowerCase().includes(searchTerm) ||
+    // Create a copy with original indices to preserve them during sort/filter
+    let indexedData = runHistory.map((run, index) => ({ ...run, originalIndex: index }));
+
+    let filteredData = indexedData.filter(run =>
+        (run.notes || '').toLowerCase().includes(searchTerm) ||
         run.date.includes(searchTerm) ||
         run.distance.toString().includes(searchTerm)
     );
@@ -392,7 +498,7 @@ function renderHistoryTable() {
         }
     });
 
-    tbody.innerHTML = filteredData.map((run, index) => `
+    tbody.innerHTML = filteredData.map(run => `
         <tr>
             <td>${new Date(run.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
             <td>${run.distance.toFixed(1)}</td>
@@ -404,12 +510,13 @@ function renderHistoryTable() {
             <td>${run.notes || '-'}</td>
             <td>
                 <div class="table-actions">
-                    <button class="btn-icon" onclick="editRun(${runHistory.indexOf(run)})">
+                    <button class="btn-icon" onclick="editRun(${run.originalIndex})" title="Edit">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 20h9"/> <!-- simple pencil placeholder -->
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                         </svg>
                     </button>
-                    <button class="btn-icon" onclick="deleteRun(${runHistory.indexOf(run)})">
+                    <button class="btn-icon" onclick="deleteRun(${run.originalIndex})" title="Delete">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3 6 5 6 21 6"/>
                             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
@@ -421,17 +528,6 @@ function renderHistoryTable() {
     `).join('');
 }
 
-function deleteRun(index) {
-    if (confirm('Are you sure you want to delete this run?')) {
-        runHistory.splice(index, 1);
-        saveData();
-        renderHistoryTable();
-        if (document.getElementById('dashboard-section').classList.contains('active')) {
-            initDashboard();
-        }
-    }
-}
-
 document.getElementById('search-input').addEventListener('input', renderHistoryTable);
 document.getElementById('sort-select').addEventListener('change', renderHistoryTable);
 
@@ -439,27 +535,7 @@ document.getElementById('sort-select').addEventListener('change', renderHistoryT
 // INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // Load persisted data or fallback to bundled DB JSON
-    const stored = localStorage.getItem('runHistory');
-    if (stored) {
-        runHistory = JSON.parse(stored);
-    } else {
-        try {
-            const response = await fetch('DB/runs.json');
-            if (response.ok) {
-                runHistory = await response.json();
-                // Save to localStorage for future sessions
-                saveData();
-            } else {
-                console.error('Failed to load runs.json:', response.status);
-                runHistory = [];
-            }
-        } catch (e) {
-            console.error('Error fetching runs.json:', e);
-            runHistory = [];
-        }
-    }
-    initDashboard();
+document.addEventListener('DOMContentLoaded', () => {
+    fetchRuns();
     document.getElementById('run-date').valueAsDate = new Date();
 });

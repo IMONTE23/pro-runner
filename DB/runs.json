@@ -6,7 +6,7 @@
         "hr": 142,
         "cadence": 175,
         "elevation": null,
-        "notes": "Easy recovery run"
+        "notes": "Edited via Backend"
     },
     {
         "date": "2025-11-23",
@@ -19,7 +19,7 @@
     },
     {
         "date": "2025-11-22",
-        "distance": 8.0,
+        "distance": 8,
         "time": 2240,
         "hr": 164,
         "cadence": 174,
@@ -64,7 +64,7 @@
     },
     {
         "date": "2025-11-10",
-        "distance": 7.0,
+        "distance": 7,
         "time": 2604,
         "hr": 135,
         "cadence": 168,
@@ -109,7 +109,7 @@
     },
     {
         "date": "2025-11-02",
-        "distance": 20.0,
+        "distance": 20,
         "time": 5130,
         "hr": 159,
         "cadence": 172,
@@ -118,7 +118,7 @@
     },
     {
         "date": "2025-11-01",
-        "distance": 20.0,
+        "distance": 20,
         "time": 5130,
         "hr": 159,
         "cadence": 172,
