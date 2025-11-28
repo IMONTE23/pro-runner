@@ -3,23 +3,7 @@
 // ============================================
 
 // Your Running History Data
-const testRunData = [
-    { date: '2025-11-25', distance: 10.52, time: 3417, hr: 142, cadence: 175, elevation: null, notes: 'Easy recovery run' },
-    { date: '2025-11-23', distance: 21.39, time: 6158, hr: 159, cadence: 176, elevation: null, notes: 'Half Marathon - Strong finish!' },
-    { date: '2025-11-22', distance: 8.0, time: 2240, hr: 164, cadence: 174, elevation: null, notes: 'Tempo run' },
-    { date: '2025-11-19', distance: 14.25, time: 4071, hr: 151, cadence: 173, elevation: null, notes: 'Long steady run' },
-    { date: '2025-11-17', distance: 27.51, time: 8699, hr: 153, cadence: 170, elevation: null, notes: 'Ultra distance training - Amazing effort!' },
-    { date: '2025-11-13', distance: 14.01, time: 3979, hr: 156, cadence: 172, elevation: null, notes: 'Steady pace run' },
-    { date: '2025-11-11', distance: 10.02, time: 2926, hr: 151, cadence: 171, elevation: null, notes: 'Tempo run' },
-    { date: '2025-11-10', distance: 7.0, time: 2604, hr: 135, cadence: 168, elevation: null, notes: 'Easy recovery' },
-    { date: '2025-11-09', distance: 21.29, time: 6684, hr: 159, cadence: 169, elevation: null, notes: 'Half Marathon training' },
-    { date: '2025-11-08', distance: 10.22, time: 3257, hr: 161, cadence: 161, elevation: null, notes: 'Steady run' },
-    { date: '2025-11-06', distance: 12.31, time: 3608, hr: 157, cadence: 172, elevation: null, notes: 'Tempo run' },
-    { date: '2025-11-03', distance: 16.82, time: 5130, hr: 159, cadence: 172, elevation: null, notes: 'Long run preparation' },
-    { date: '2025-11-02', distance: 20.0, time: 5130, hr: 159, cadence: 172, elevation: null, notes: 'Long run preparation' },
-];
-
-let runHistory = JSON.parse(localStorage.getItem('runHistory')) || testRunData;
+let runHistory = [];
 
 // ============================================
 // UTILITY FUNCTIONS
@@ -450,7 +434,27 @@ document.getElementById('sort-select').addEventListener('change', renderHistoryT
 // INITIALIZATION
 // ============================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Load persisted data or fallback to bundled DB JSON
+    const stored = localStorage.getItem('runHistory');
+    if (stored) {
+        runHistory = JSON.parse(stored);
+    } else {
+        try {
+            const response = await fetch('DB/runs.json');
+            if (response.ok) {
+                runHistory = await response.json();
+                // Save to localStorage for future sessions
+                saveData();
+            } else {
+                console.error('Failed to load runs.json:', response.status);
+                runHistory = [];
+            }
+        } catch (e) {
+            console.error('Error fetching runs.json:', e);
+            runHistory = [];
+        }
+    }
     initDashboard();
     document.getElementById('run-date').valueAsDate = new Date();
 });
